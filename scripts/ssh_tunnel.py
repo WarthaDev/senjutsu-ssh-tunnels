@@ -10,13 +10,44 @@ import os, requests, stat
 
 from modules.shared import cmd_opts
 
-#...
+# ...
 
-def ssh_tunnel(host: str) -> str:
-    #...
+LOCALHOST_RUN = "localhost.run"
+REMOTE_MOE = "remote.moe"
+localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
+remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
+
+# ...
+
+def remote_moe_tunnel():
+    ssh_name = "id_rsa"
+    ssh_path = Path(__file__).parent.parent / ssh_name
+
+    tmp = None
+    if not ssh_path.exists():
+        try:
+            gen_key(ssh_path)
+        except subprocess.CalledProcessError:
+            tmp = TemporaryDirectory()
+            ssh_path = Path(tmp.name) / ssh_name
+            gen_key(ssh_path)
+
+    port = cmd_opts.port if cmd_opts.port else 7860
+
+    arg_string = f"ssh -R 80:127.0.0.1:{port} -o StrictHostKeyChecking=no -i {ssh_path.as_posix()} {REMOTE_MOE}"
+    args = shlex.split(arg_string)
+
+    tunnel = subprocess.Popen(
+        args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8"
+    )
+
+    atexit.register(tunnel.terminate)
+    if tmp is not None:
+        atexit.register(tmp.cleanup)
+
     tunnel_url = ""
-    lines = 27 if host == LOCALHOST_RUN else 5
-    pattern = localhostrun_pattern if host == LOCALHOST_RUN else remotemoe_pattern
+    lines = 5
+    pattern = remotemoe_pattern
 
     for _ in range(lines):
         line = tunnel.stdout.readline()
@@ -26,58 +57,41 @@ def ssh_tunnel(host: str) -> str:
         url_match = pattern.search(line)
         if url_match:
             tunnel_url = url_match.group("url")
-            if lines == 27:
-                os.environ['LOCALHOST_RUN'] = tunnel_url
-            else:
-                os.environ['REMOTE_MOE'] = tunnel_url
+            os.environ['REMOTE_MOE'] = tunnel_url
             break
     else:
-        raise RuntimeError(f"Failed to run {host}")
+        raise RuntimeError(f"Failed to run {REMOTE_MOE}")
 
-    return tunnel_url
+    strings.en["SHARE_LINK_MESSAGE"] = f"Public nama URL: {tunnel_url}"
 
-def googleusercontent_tunnel():
-    colab_url = os.getenv('colab_url')
-    if colab_url:
-        strings.en["SHARE_LINK_MESSAGE"] = f"Public URL: {colab_url}"
-
-share_link_messages = []
-
-if cmd_opts.gradio:
-    print("Gradio terdeteksi, mencoba menghubungkan...")
-    try:
-        gradio_tunnel_url = gradio_tunnel()
-        share_link_messages.append(f"Public Gradio URL: {gradio_tunnel_url}")
-        share_link_messages.append(f"Public Gradio URL: {gradio_tunnel_url}")
-    except:
-        pass
+# ...
 
 if cmd_opts.localhostrun:
-    print("localhost.run terdeteksi, mencoba menghubungkan...")
-    tunnel_url = ssh_tunnel(LOCALHOST_RUN)
-    share_link_messages.append(f"Public localhost.run URL: {tunnel_url}")
+    print("localhost.run detected, trying to connect...")
+    ssh_tunnel(LOCALHOST_RUN)
 
 if cmd_opts.remotemoe:
-    print("remote.moe terdeteksi, mencoba menghubungkan...")
-    tunnel_url = ssh_tunnel(REMOTE_MOE)
-    share_link_messages.append(f"Public remote.moe URL: {tunnel_url}")
+    print("remote.moe detected, trying to connect...")
+    remote_moe_tunnel()
 
 if cmd_opts.googleusercontent:
-    print("googleusercontent.com terdeteksi, mencoba menghubungkan...")
+    print("googleusercontent.com detected, trying to connect...")
     googleusercontent_tunnel()
 
 if cmd_opts.multiple:
-    print("Semua terdeteksi, mencoba menghubungkan remote.moe...")
+    print("all detected, remote.moe trying to connect...")
     try:
-        tunnel_url = ssh_tunnel(LOCALHOST_RUN)
-        share_link_messages.append(f"Public localhost.run URL: {tunnel_url}")
+        ssh_tunnel(LOCALHOST_RUN)
     except:
         pass
     try:
-        tunnel_url = ssh_tunnel(REMOTE_MOE)
-        share_link_messages.append(f"Public remote.moe URL: {tunnel_url}")
+        remote_moe_tunnel()
     except:
         pass
-
-strings.en["SHARE_LINK_MESSAGE"] = "\n".join(share_link_messages)
-    
+    try:
+        os.environ['GRADIO_TUNNEL'] = gradio_tunnel()
+    except:
+        pass
+    strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public nama URL: {os.getenv('REMOTE_MOE')} \nPublic nama URL: {os.getenv('GRADIO_TUNNEL')} \nPublic nama URL: {os.getenv('LOCALHOST_RUN')}"
+    strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link we are getting ERROR: Exception in ASGI application:  {}"
+            
