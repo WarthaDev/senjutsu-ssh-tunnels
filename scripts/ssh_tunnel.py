@@ -115,5 +115,4 @@ if cmd_opts.multiple:
     except Exception as e:
         print(f"Failed to create tunnel for googleusercontent.com: {str(e)}")
 
-strings.en["SHARE_LINK_MESSAGE"] = f"Wartha Sensei Public URL(localhost.run): {os.getenv('LOCALHOST_RUN')}\nPublic WebUI Colab URL (remote.moe): {os.getenv('REMOTE_MOE')}\nPublic WebUI Colab URL (googleusercontent.com): {os.getenv('GOOGLEUSERCONTENT')}"
-
+strings.en["SHARE_LINK_MESSAGE"] = f"nPublic URL from Wartha Sensei(localhost.run): {os.getenv('LOCALHOST_RUN')}\nPublic URL from Wartha Sensei (remote.moe): {os.getenv('REMOTE_MOE')}\nPublic URL from Wartha Sensei(googleusercontent.com): {os.getenv('GOOGLEUSERCONTENT')}"
