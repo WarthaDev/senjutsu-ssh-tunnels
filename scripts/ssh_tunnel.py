@@ -30,7 +30,7 @@ def kill_tunnel(proc):
 
 # === Gradio Tunnel ===
 
-def gradio_tunnel() -> str:
+def gradio_tunnel() -> Union[str, None]:
     script_path = os.path.dirname(os.path.abspath(__file__))
     binary_path = os.path.join(script_path, "frpc_linux_amd64")
     response = requests.get("https://api.gradio.app/v2/tunnel-request")
@@ -47,8 +47,8 @@ def gradio_tunnel() -> str:
                        "--ue", "--server_addr", f"{remote_host}:{remote_port}", "--disable_log_color"]
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             atexit.register(kill_tunnel, proc)
-            url = ""
-            while url == "":
+            url = None
+            while url is None:
                 if proc.stdout is None:
                     continue
                 line = proc.stdout.readline()
@@ -67,7 +67,7 @@ def gradio_tunnel() -> str:
 
 # === SSH Tunnel ===
 
-def ssh_tunnel(host: str) -> str:
+def ssh_tunnel(host: str) -> Union[str, None]:
     ssh_name = "id_rsa"
     ssh_path = Path(__file__).parent.parent / ssh_name
 
@@ -91,7 +91,7 @@ def ssh_tunnel(host: str) -> str:
     if tmp is not None:
         atexit.register(tmp.cleanup)
 
-    tunnel_url = ""
+    tunnel_url = None
     lines = 27 if host == LOCALHOST_RUN else 5
     pattern = localhostrun_pattern if host == LOCALHOST_RUN else remotemoe_pattern
 
@@ -111,7 +111,7 @@ def ssh_tunnel(host: str) -> str:
 
 # === Google Tunnel ===
 
-def google_tunnel() -> str:
+def google_tunnel() -> Union[str, None]:
     colab_url = os.getenv('colab_url')
     return colab_url
 
@@ -132,35 +132,22 @@ if cmd_opts.googleusercontent:
 if cmd_opts.multiple:
     print("Semua terdeteksi, mencoba terhubung...")
 
-    try:
-        os.environ['LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
-    except:
-        pass
+    urls = []
 
-    try:
-        os.environ['REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
-    except:
-        pass
+    if cmd_opts.localhostrun:
+        urls.append(LOCALHOST_RUN)
 
-    try:
-        os.environ['GOOGLE_TUNNEL'] = google_tunnel()
-    except:
-        pass
+    if cmd_opts.remotemoe:
+        urls.append(REMOTE_MOE)
 
-    try:
-        os.environ['SECOND_LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
-    except:
-        pass
+    urls.append(GOOGLE_TUNNEL)
 
-    try:
-        os.environ['SECOND_REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
-    except:
-        pass
-
-    try:
-        os.environ['SECOND_GRADIO_TUNNEL'] = gradio_tunnel()
-    except:
-        pass
+    for url in urls:
+        try:
+            os.environ[url.upper()] = ssh_tunnel(url)
+            break
+        except:
+            continue
 
 strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL 1: {os.getenv('REMOTE_MOE')}\n" \
                                          f"Public URL 2: {os.getenv('GRADIO_TUNNEL')}\n" \
@@ -171,3 +158,4 @@ strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL 1: {os.getenv('REMOTE_MOE
                                          f"Public URL 7: {os.getenv('SECOND_LOCALHOST_RUN')}"
 
 strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link, we are getting ERROR: Exception in ASGI application:  {}"
+        
