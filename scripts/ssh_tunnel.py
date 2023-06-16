@@ -39,7 +39,7 @@ def ssh_tunnel(host: str) -> str:
 def googleusercontent_tunnel():
     colab_url = os.getenv('colab_url')
     if colab_url:
-        strings.en["SHARE_LINK_MESSAGE"].append(f"WebUI Colab URL: {colab_url}")
+        strings.en["SHARE_LINK_MESSAGE"] = f"Public URL: {colab_url}"
 
 share_link_messages = []
 
@@ -80,4 +80,4 @@ if cmd_opts.multiple:
         pass
 
 strings.en["SHARE_LINK_MESSAGE"] = "\n".join(share_link_messages)
-        
+    
