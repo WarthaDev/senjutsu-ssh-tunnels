@@ -5,10 +5,12 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Union
-from gradio import strings
-import os, requests, stat
+import os
+import requests
+import stat
 
 from modules.shared import cmd_opts
+from gradio import strings
 
 # Fungsi untuk menghentikan tunnel
 def kill_tunnel(proc):
@@ -80,39 +82,76 @@ def create_googleusercontent_tunnel() -> str:
     colab_url = os.getenv('colab_url')
     return colab_url
 
-# Main program
+# Fungsi untuk mendapatkan Gradio tunnel URL
+def get_gradio_tunnel_url() -> str:
+    print("Getting Gradio tunnel URL...")
+    return gradio_tunnel()
+
+# Fungsi untuk menghentikan tunnel Gradio
+def kill_gradio_tunnel():
+    gradio_tunnel_url = os.getenv('GRADIO_TUNNEL')
+    if gradio_tunnel_url:
+        print("Killing Gradio tunnel...")
+        subprocess.call(["frpc_linux_amd64", "http", "-c", "gradio.ini", "stop"])
+
+# Fungsi untuk mendapatkan URL publik dari Gradio
+def gradio_tunnel():
+    script_path = os.path.dirname(os.path.abspath(__file__))
+    binary_path = os.path.join(script_path, "frpc_linux_amd64")
+    response = requests.get("https://api.gradio.app/v2/tunnel-request")
+    if response and response.status_code == 200:
+        try:
+            payload = response.json()[0]
+            remote_host, remote_port = payload["host"], int(payload["port"])
+            resp = requests.get("https://cdn-media.huggingface.co/frpc-gradio-0.1/frpc_linux_amd64")
+            with open(binary_path, "wb") as file:
+                file.write(resp.content)
+            st = os.stat(binary_path)
+            os.chmod(binary_path, st.st_mode | stat.S_IEXEC)
+            command = [
+                binary_path, "http", "-n", "random", "-l", "7860", "-i", "127.0.0.1",
+                "--uc", "--sd", "random", "--ue", "--server_addr", f"{remote_host}:{remote_port}",
+                "--disable_log_color"
+            ]
+            proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            atexit.register(kill_gradio_tunnel)
+            url = ""
+            while url == "":
+                if proc.stdout is None:
+                    continue
+                line = proc.stdout.readline()
+                line = line.decode("utf-8")
+                if "start proxy success" in line:
+                    result = re.search("start proxy success: (.+)\n", line)
+                    if result is None:
+                        raise ValueError("Could not create share URL")
+                    else:
+                        url = result.group(1)
+            return url
+        except Exception as e:
+            raise RuntimeError(str(e))
+    else:
+        raise RuntimeError("Could not get share link from Gradio API Server.")
+
+# Mengatur opsi bahasa Gradio menjadi bahasa Inggris
+strings.set_gradio_locale("en")
+
 if cmd_opts.localhostrun:
-    try:
-        os.environ['LOCALHOST_RUN'] = create_localhostrun_tunnel()
-    except Exception as e:
-        print(f"Failed to create tunnel for localhost.run: {str(e)}")
+    os.environ['LOCALHOST_RUN'] = create_localhostrun_tunnel()
 
 if cmd_opts.remotemoe:
-    try:
-        os.environ['REMOTE_MOE'] = create_remotemoe_tunnel()
-    except Exception as e:
-        print(f"Failed to create tunnel for remote.moe: {str(e)}")
+    os.environ['REMOTE_MOE'] = create_remotemoe_tunnel()
 
 if cmd_opts.googleusercontent:
-    try:
-        os.environ['GOOGLEUSERCONTENT'] = create_googleusercontent_tunnel()
-    except Exception as e:
-        print(f"Failed to create tunnel for googleusercontent.com: {str(e)}")
+    os.environ['GOOGLEUSERCONTENT'] = create_googleusercontent_tunnel()
 
 if cmd_opts.multiple:
-    try:
-        os.environ['LOCALHOST_RUN'] = create_localhostrun_tunnel()
-    except Exception as e:
-        print(f"Failed to create tunnel for localhost.run: {str(e)}")
+    os.environ['GRADIO_TUNNEL'] = get_gradio_tunnel_url()
 
-    try:
-        os.environ['REMOTE_MOE'] = create_remotemoe_tunnel()
-    except Exception as e:
-        print(f"Failed to create tunnel for remote.moe: {str(e)}")
+strings.en["SHARE_LINK_MESSAGE"] = "WebUI Colab URL: {}"
 
-    try:
-        os.environ['GOOGLEUSERCONTENT'] = create_googleusercontent_tunnel()
-    except Exception as e:
-        print(f"Failed to create tunnel for googleusercontent.com: {str(e)}")
-
-strings.en["SHARE_LINK_MESSAGE"] = f"nPublic URL from Wartha Sensei(localhost.run): {os.getenv('LOCALHOST_RUN')}\nPublic URL from Wartha Sensei (remote.moe): {os.getenv('REMOTE_MOE')}\nPublic URL from Wartha Sensei(googleusercontent.com): {os.getenv('GOOGLEUSERCONTENT')}"
+if cmd_opts.multiple:
+    strings.en["RUNNING_LOCALLY_SEPARATED"] = "Public WebUI Colab URL: {}\nPublic WebUI Colab URL: {}\nPublic WebUI Colab URL: {}"
+else:
+    strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link, we are getting an ERROR: Exception in ASGI application: {}"
+        
