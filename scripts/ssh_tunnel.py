@@ -12,25 +12,17 @@ from gradio import strings
 
 from modules.shared import cmd_opts
 
-# === TUNNELING ===
-
 LOCALHOST_RUN = "localhost.run"
 REMOTE_MOE = "remote.moe"
-GOOGLE_TUNNEL = "google"
-
 localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
 remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
-
-# === Additional Functions ===
 
 def kill_tunnel(proc):
     if proc is not None:
         print(f"Menutup tunnel 127.0.0.1:7860")
         proc.terminate()
 
-# === Gradio Tunnel ===
-
-def gradio_tunnel() -> Union[str, None]:
+def gradio_tunnel() -> str:
     script_path = os.path.dirname(os.path.abspath(__file__))
     binary_path = os.path.join(script_path, "frpc_linux_amd64")
     response = requests.get("https://api.gradio.app/v2/tunnel-request")
@@ -47,8 +39,8 @@ def gradio_tunnel() -> Union[str, None]:
                        "--ue", "--server_addr", f"{remote_host}:{remote_port}", "--disable_log_color"]
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             atexit.register(kill_tunnel, proc)
-            url = None
-            while url is None:
+            url = ""
+            while url == "":
                 if proc.stdout is None:
                     continue
                 line = proc.stdout.readline()
@@ -56,18 +48,16 @@ def gradio_tunnel() -> Union[str, None]:
                 if "start proxy success" in line:
                     result = re.search("start proxy success: (.+)\n", line)
                     if result is None:
-                        raise ValueError("Could not create share URL")
+                        raise ValueError("Tidak dapat membuat URL berbagi")
                     else:
                         url = result.group(1)
             return url
         except Exception as e:
             raise RuntimeError(str(e))
     else:
-        raise RuntimeError("Could not get share link from Gradio API Server.")
+        raise RuntimeError("Tidak dapat mendapatkan tautan berbagi dari Gradio API Server.")
 
-# === SSH Tunnel ===
-
-def ssh_tunnel(host: str) -> Union[str, None]:
+def ssh_tunnel(host: str = LOCALHOST_RUN) -> str:
     ssh_name = "id_rsa"
     ssh_path = Path(__file__).parent.parent / ssh_name
 
@@ -87,11 +77,11 @@ def ssh_tunnel(host: str) -> Union[str, None]:
 
     tunnel = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8")
 
-    atexit.register(kill_tunnel, tunnel)
+    atexit.register(tunnel.terminate)
     if tmp is not None:
         atexit.register(tmp.cleanup)
 
-    tunnel_url = None
+    tunnel_url = ""
     lines = 27 if host == LOCALHOST_RUN else 5
     pattern = localhostrun_pattern if host == LOCALHOST_RUN else remotemoe_pattern
 
@@ -103,19 +93,19 @@ def ssh_tunnel(host: str) -> Union[str, None]:
         url_match = pattern.search(line)
         if url_match:
             tunnel_url = url_match.group("url")
+            if lines == 27:
+                os.environ['LOCALHOST_RUN'] = tunnel_url
+            else:
+                os.environ['REMOTE_MOE'] = tunnel_url
             break
     else:
         raise RuntimeError(f"Gagal menjalankan {host}")
 
     return tunnel_url
 
-# === Google Tunnel ===
-
-def google_tunnel() -> Union[str, None]:
+def google_tunnel() -> str:
     colab_url = os.getenv('colab_url')
     return colab_url
-
-# === Main Execution ===
 
 if cmd_opts.localhostrun:
     print("localhost.run terdeteksi, mencoba terhubung...")
@@ -132,30 +122,54 @@ if cmd_opts.googleusercontent:
 if cmd_opts.multiple:
     print("Semua terdeteksi, mencoba terhubung...")
 
-    urls = []
+    # URL Publik Pertama
+    try:
+        os.environ['LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
+    except:
+        pass
 
-    if cmd_opts.localhostrun:
-        urls.append(LOCALHOST_RUN)
+    # URL Publik Kedua
+    try:
+        os.environ['REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
+    except:
+        pass
 
-    if cmd_opts.remotemoe:
-        urls.append(REMOTE_MOE)
+    # URL Publik Ketiga
+    try:
+        os.environ['GRADIO_TUNNEL'] = gradio_tunnel()
+    except:
+        pass
 
-    urls.append(GOOGLE_TUNNEL)
+    # URL Publik Keempat
+    try:
+        os.environ['SECOND_LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
+    except:
+        pass
 
-    for url in urls:
-        try:
-            os.environ[url.upper()] = ssh_tunnel(url)
-            break
-        except:
-            continue
+    # URL Publik Kelima
+    try:
+        os.environ['SECOND_REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
+    except:
+        pass
 
-strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL 1: {os.getenv('REMOTE_MOE')}\n" \
-                                         f"Public URL 2: {os.getenv('GRADIO_TUNNEL')}\n" \
-                                         f"Public URL 3: {os.getenv('GOOGLE_TUNNEL')}\n" \
-                                         f"Public URL 4: {os.getenv('LOCALHOST_RUN')}\n" \
-                                         f"Public URL 5: {os.getenv('SECOND_REMOTE_MOE')}\n" \
-                                         f"Public URL 6: {os.getenv('SECOND_GRADIO_TUNNEL')}\n" \
-                                         f"Public URL 7: {os.getenv('SECOND_LOCALHOST_RUN')}"
+    # URL Publik Keenam
+    try:
+        os.environ['SECOND_GRADIO_TUNNEL'] = gradio_tunnel()
+    except:
+        pass
 
-strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link, we are getting ERROR: Exception in ASGI application:  {}"
-        
+    # URL Publik Ketujuh
+    try:
+        os.environ['GOOGLE_TUNNEL'] = google_tunnel()
+    except:
+        pass
+
+    strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL 1: {os.getenv('REMOTE_MOE')}\n" \
+                                             f"Public URL 2: {os.getenv('GRADIO_TUNNEL')}\n" \
+                                             f"Public URL 3: {os.getenv('LOCALHOST_RUN')}\n" \
+                                             f"Public URL 4: {os.getenv('SECOND_REMOTE_MOE')}\n" \
+                                             f"Public URL 5: {os.getenv('SECOND_GRADIO_TUNNEL')}\n" \
+                                             f"Public URL 6: {os.getenv('SECOND_LOCALHOST_RUN')}\n" \
+                                             f"Public URL 7: {os.getenv('GOOGLE_TUNNEL')}"
+
+# ...
