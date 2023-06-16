@@ -123,6 +123,15 @@ def googleusercontent_tunnel():
     strings.en["SHARE_LINK_MESSAGE"] = f"WebUI Colab URL: {colab_url}"
 
 
+def connect_multiple_hosts(hosts):
+    for host in hosts:
+        try:
+            ssh_tunnel(host)
+            break  # Jika berhasil terhubung ke salah satu host, keluar dari loop
+        except Exception as e:
+            print(f"Failed to connect to {host}: {str(e)}")
+
+
 if cmd_opts.localhostrun:
     print("localhost.run detected, trying to connect...")
     ssh_tunnel(LOCALHOST_RUN)
@@ -136,34 +145,31 @@ if cmd_opts.googleusercontent:
     googleusercontent_tunnel()
 
 if cmd_opts.multiple:
-    print("all detected, remote.moe trying to connect...")
-    try:
-        ssh_tunnel(LOCALHOST_RUN)
-    except:
-        pass
-    try:
-        ssh_tunnel(REMOTE_MOE)
-    except:
-        pass
+    print("all detected, trying to connect to multiple hosts...")
+    connect_multiple_hosts([LOCALHOST_RUN, REMOTE_MOE])
+
     try:
         os.environ['GRADIO_TUNNEL'] = gradio_tunnel()
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to connect using gradio_tunnel(): {str(e)}")
+
     try:
         os.environ['SECOND_LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to connect to second localhost.run host: {str(e)}")
+
     try:
         os.environ['SECOND_REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to connect to second remote.moe host: {str(e)}")
+
     try:
         os.environ['SECOND_GRADIO_TUNNEL'] = gradio_tunnel()
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to connect using second gradio_tunnel(): {str(e)}")
 
-    strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public WebUI Colab URL: {os.getenv('REMOTE_MOE')} \nPublic WebUI Colab URL: {os.getenv('GRADIO_TUNNEL')} \nPublic WebUI Colab URL: {os.getenv('LOCALHOST_RUN')}" \
-                                              f"\nPublic WebUI Colab URL: {os.getenv('SECOND_REMOTE_MOE')} \nPublic WebUI Colab URL: {os.getenv('SECOND_GRADIO_TUNNEL')} \nPublic WebUI Colab URL: {os.getenv('SECOND_LOCALHOST_RUN')}"
+    strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL: {os.getenv('REMOTE_MOE')} \nPublic URL: {os.getenv('GRADIO_TUNNEL')} \nPublic URL: {os.getenv('LOCALHOST_RUN')}" \
+                                              f"\nPublic URL: {os.getenv('SECOND_REMOTE_MOE')} \nPublic URL: {os.getenv('SECOND_GRADIO_TUNNEL')} \nPublic URL: {os.getenv('SECOND_LOCALHOST_RUN')}"
 
     strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link we are getting ERROR: Exception in ASGI application:  {}"
-            
+    
