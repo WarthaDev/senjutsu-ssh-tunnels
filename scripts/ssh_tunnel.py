@@ -5,19 +5,32 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Union
+import os
+import requests
+import stat
 from gradio import strings
-import os, requests, stat
 
 from modules.shared import cmd_opts
 
-# https://github.com/gradio-app/gradio/blob/main/gradio/tunneling.py modified
-def kill(self):
-    if self.proc is not None:
-        print(f"Killing tunnel 127.0.0.1:7860")
-        self.proc.terminate()
-        self.proc = None
+# === TUNNELING ===
 
-def gradio_tunnel():
+LOCALHOST_RUN = "localhost.run"
+REMOTE_MOE = "remote.moe"
+GOOGLE_TUNNEL = "google"
+
+localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
+remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
+
+# === Additional Functions ===
+
+def kill_tunnel(proc):
+    if proc is not None:
+        print(f"Menutup tunnel 127.0.0.1:7860")
+        proc.terminate()
+
+# === Gradio Tunnel ===
+
+def gradio_tunnel() -> str:
     script_path = os.path.dirname(os.path.abspath(__file__))
     binary_path = os.path.join(script_path, "frpc_linux_amd64")
     response = requests.get("https://api.gradio.app/v2/tunnel-request")
@@ -30,11 +43,10 @@ def gradio_tunnel():
                 file.write(resp.content)
             st = os.stat(binary_path)
             os.chmod(binary_path, st.st_mode | stat.S_IEXEC)
-            command = [binary_path,"http","-n","random","-l","7860","-i","127.0.0.1","--uc","--sd","random","--ue","--server_addr",f"{remote_host}:{remote_port}","--disable_log_color",]
-            proc = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            atexit.register(kill)
+            command = [binary_path, "http", "-n", "random", "-l", "7860", "-i", "127.0.0.1", "--uc", "--sd", "random",
+                       "--ue", "--server_addr", f"{remote_host}:{remote_port}", "--disable_log_color"]
+            proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            atexit.register(kill_tunnel, proc)
             url = ""
             while url == "":
                 if proc.stdout is None:
@@ -53,21 +65,9 @@ def gradio_tunnel():
     else:
         raise RuntimeError("Could not get share link from Gradio API Server.")
 
-LOCALHOST_RUN = "localhost.run"
-REMOTE_MOE = "remote.moe"
-localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
-remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
+# === SSH Tunnel ===
 
-
-def gen_key(path: Union[str, Path]) -> None:
-    path = Path(path)
-    arg_string = f'ssh-keygen -t rsa -b 4096 -N "" -q -f {path.as_posix()}'
-    args = shlex.split(arg_string)
-    subprocess.run(args, check=True)
-    path.chmod(0o600)
-
-
-def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
+def ssh_tunnel(host: str) -> str:
     ssh_name = "id_rsa"
     ssh_path = Path(__file__).parent.parent / ssh_name
 
@@ -75,7 +75,6 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
     if not ssh_path.exists():
         try:
             gen_key(ssh_path)
-        # write permission error or etc
         except subprocess.CalledProcessError:
             tmp = TemporaryDirectory()
             ssh_path = Path(tmp.name) / ssh_name
@@ -86,11 +85,9 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
     arg_string = f"ssh -R 80:127.0.0.1:{port} -o StrictHostKeyChecking=no -i {ssh_path.as_posix()} {host}"
     args = shlex.split(arg_string)
 
-    tunnel = subprocess.Popen(
-        args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8"
-    )
+    tunnel = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8")
 
-    atexit.register(tunnel.terminate)
+    atexit.register(kill_tunnel, tunnel)
     if tmp is not None:
         atexit.register(tmp.cleanup)
 
@@ -106,70 +103,71 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
         url_match = pattern.search(line)
         if url_match:
             tunnel_url = url_match.group("url")
-            if lines == 27:
-                os.environ['LOCALHOST_RUN'] = tunnel_url
-            else:
-                os.environ['REMOTE_MOE'] = tunnel_url
             break
     else:
-        raise RuntimeError(f"Failed to run {host}")
+        raise RuntimeError(f"Gagal menjalankan {host}")
 
-    if not cmd_opts.multiple:
-        strings.en["SHARE_LINK_MESSAGE"] = f"Public WebUI Colab URL: {tunnel_url}"
+    return tunnel_url
 
+# === Google Tunnel ===
 
-def googleusercontent_tunnel():
+def google_tunnel() -> str:
     colab_url = os.getenv('colab_url')
-    strings.en["SHARE_LINK_MESSAGE"] = f"WebUI Colab URL: {colab_url}"
+    return colab_url
 
-
-def connect_multiple_hosts(hosts):
-    for host in hosts:
-        try:
-            ssh_tunnel(host)
-            break  # Jika berhasil terhubung ke salah satu host, keluar dari loop
-        except Exception as e:
-            print(f"Failed to connect to {host}: {str(e)}")
-
+# === Main Execution ===
 
 if cmd_opts.localhostrun:
-    print("localhost.run detected, trying to connect...")
-    ssh_tunnel(LOCALHOST_RUN)
+    print("localhost.run terdeteksi, mencoba terhubung...")
+    os.environ['LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
 
 if cmd_opts.remotemoe:
-    print("remote.moe detected, trying to connect...")
-    ssh_tunnel(REMOTE_MOE)
+    print("remote.moe terdeteksi, mencoba terhubung...")
+    os.environ['REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
 
 if cmd_opts.googleusercontent:
-    print("googleusercontent.com detected, trying to connect...")
-    googleusercontent_tunnel()
+    print("googleusercontent.com terdeteksi, mencoba terhubung...")
+    os.environ['GOOGLE_TUNNEL'] = google_tunnel()
 
 if cmd_opts.multiple:
-    print("all detected, trying to connect to multiple hosts...")
-    connect_multiple_hosts([LOCALHOST_RUN, REMOTE_MOE])
+    print("Semua terdeteksi, mencoba terhubung...")
 
     try:
-        os.environ['GRADIO_TUNNEL'] = gradio_tunnel()
-    except Exception as e:
-        print(f"Failed to connect using gradio_tunnel(): {str(e)}")
+        os.environ['LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
+    except:
+        pass
+
+    try:
+        os.environ['REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
+    except:
+        pass
+
+    try:
+        os.environ['GOOGLE_TUNNEL'] = google_tunnel()
+    except:
+        pass
 
     try:
         os.environ['SECOND_LOCALHOST_RUN'] = ssh_tunnel(LOCALHOST_RUN)
-    except Exception as e:
-        print(f"Failed to connect to second localhost.run host: {str(e)}")
+    except:
+        pass
 
     try:
         os.environ['SECOND_REMOTE_MOE'] = ssh_tunnel(REMOTE_MOE)
-    except Exception as e:
-        print(f"Failed to connect to second remote.moe host: {str(e)}")
+    except:
+        pass
 
     try:
         os.environ['SECOND_GRADIO_TUNNEL'] = gradio_tunnel()
-    except Exception as e:
-        print(f"Failed to connect using second gradio_tunnel(): {str(e)}")
+    except:
+        pass
 
-    strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL: {os.getenv('REMOTE_MOE')} \nPublic URL: {os.getenv('GRADIO_TUNNEL')} \nPublic URL: {os.getenv('LOCALHOST_RUN')}" \
-                                              f"\nPublic URL: {os.getenv('SECOND_REMOTE_MOE')} \nPublic URL: {os.getenv('SECOND_GRADIO_TUNNEL')} \nPublic URL: {os.getenv('SECOND_LOCALHOST_RUN')}"
+strings.en["RUNNING_LOCALLY_SEPARATED"] = f"Public URL 1: {os.getenv('REMOTE_MOE')}\n" \
+                                         f"Public URL 2: {os.getenv('GRADIO_TUNNEL')}\n" \
+                                         f"Public URL 3: {os.getenv('GOOGLE_TUNNEL')}\n" \
+                                         f"Public URL 4: {os.getenv('LOCALHOST_RUN')}\n" \
+                                         f"Public URL 5: {os.getenv('SECOND_REMOTE_MOE')}\n" \
+                                         f"Public URL 6: {os.getenv('SECOND_GRADIO_TUNNEL')}\n" \
+                                         f"Public URL 7: {os.getenv('SECOND_LOCALHOST_RUN')}"
 
-    strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link we are getting ERROR: Exception in ASGI application:  {}"
-    
+strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link, we are getting ERROR: Exception in ASGI application:  {}"
