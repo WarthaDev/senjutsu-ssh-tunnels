@@ -33,6 +33,7 @@ def ssh_tunnel(host: str) -> None:
     if not ssh_path.exists():
         try:
             gen_key(ssh_path)
+        # write permission error or etc
         except subprocess.CalledProcessError:
             tmp = TemporaryDirectory()
             ssh_path = Path(tmp.name) / ssh_name
@@ -52,8 +53,8 @@ def ssh_tunnel(host: str) -> None:
         atexit.register(tmp.cleanup)
 
     tunnel_url = ""
-    lines = 27 if host == "LOCALHOST_RUN" else 5
-    pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)") if host == "LOCALHOST_RUN" else re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
+    lines = 27 if host == "localhost.run" else 5
+    pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)") if host == "localhost.run" else re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
 
     for _ in range(lines):
         line = tunnel.stdout.readline()
@@ -63,7 +64,7 @@ def ssh_tunnel(host: str) -> None:
         url_match = pattern.search(line)
         if url_match:
             tunnel_url = url_match.group("url")
-            if host == "LOCALHOST_RUN":
+            if host == "localhost.run":
                 os.environ['LOCALHOST_RUN'] = tunnel_url
             else:
                 os.environ['REMOTE_MOE'] = tunnel_url
@@ -93,7 +94,7 @@ def gradio_tunnel():
                 file.write(resp.content)
             st = os.stat(binary_path)
             os.chmod(binary_path, st.st_mode | stat.S_IEXEC)
-            command = [binary_path,"http","-n","random","-l","7860","-i","127.0.0.1","--uc","--sd","random","--ue","--server_addr",f"{remote_host}:{remote_port}","--disable_log_color"]
+            command = [binary_path, "http", "-n", "random", "-l", "7860", "-i", "127.0.0.1", "--uc", "--sd", "random", "--ue", "--server_addr", f"{remote_host}:{remote_port}", "--disable_log_color"]
             proc = subprocess.Popen(
                 command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -111,20 +112,20 @@ def gradio_tunnel():
                     else:
                         url = result.group(1)
             os.environ['GRADIO_TUNNEL'] = url
-            return url
+            strings.en["SHARE_LINK_MESSAGE"] = f"Public WebUI Colab URL: {url}"
         except Exception as e:
             raise RuntimeError(str(e))
     else:
         raise RuntimeError("Could not get share link from Gradio API Server.")
 
-# Mengecek opsi yang diaktifkan dan memanggil fungsi terkait
+# Menjalankan tunnel sesuai dengan opsi yang diaktifkan
 if cmd_opts.localhostrun:
     print("localhost.run detected, trying to connect...")
-    ssh_tunnel("LOCALHOST_RUN")
+    ssh_tunnel("localhost.run")
 
 if cmd_opts.remotemoe:
     print("remote.moe detected, trying to connect...")
-    ssh_tunnel("REMOTE_MOE")
+    ssh_tunnel("remote.moe")
 
 if cmd_opts.googlecolab:
     print("Google Colab detected, trying to connect...")
@@ -132,7 +133,7 @@ if cmd_opts.googlecolab:
 
 if cmd_opts.gradiotunnel:
     print("Gradio Tunnel detected, trying to connect...")
-    os.environ['GRADIO_TUNNEL'] = gradio_tunnel()
+    gradio_tunnel()
 
 # Menampilkan URL publik yang aktif
 if cmd_opts.multiple:
@@ -145,11 +146,11 @@ if cmd_opts.multiple:
         urls.append(os.environ['GOOGLE_COLAB'])
     if 'GRADIO_TUNNEL' in os.environ:
         urls.append(os.environ['GRADIO_TUNNEL'])
-    
+
     num_urls = len(urls)
     for i, url in enumerate(urls):
-        print(f"URL Publik ke-{i+1}: {url}")
+        print(f"Public WebUI URL {i+1}: {url}")
 
 # Menampilkan pesan kesalahan jika tautan tidak berhasil
-strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link we are getting ERROR: Exception in ASGI application: {}"
-            
+strings.en["SHARE_LINK_DISPLAY"] = "Please do not use this link. We encountered an error: {}"
+    
