@@ -6,15 +6,25 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Union
 from gradio import strings
-import os, requests, stat
+import os
+import requests
+import stat
 
 from modules.shared import cmd_opts
 
-# Fungsi untuk menghentikan tunnel
+LOCALHOST_RUN = "localhost.run"
+LOCALHOST_RUN1 = "localhost.run"
+REMOTE_MOE = "remote.moe"
+localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
+localhostrun_pattern1 = re.compile(r"(?P<url>https?://\S+\.lhr1\.life)")
+remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
+
+
 def kill_tunnel(proc):
     if proc is not None:
         print("Menghentikan tunnel 127.0.0.1:7860")
         proc.terminate()
+
 
 def gradio_tunnel():
     script_path = os.path.dirname(os.path.abspath(__file__))
@@ -29,7 +39,10 @@ def gradio_tunnel():
                 file.write(resp.content)
             st = os.stat(binary_path)
             os.chmod(binary_path, st.st_mode | stat.S_IEXEC)
-            command = [binary_path, "http", "-n", "random", "-l", "7860", "-i", "127.0.0.1", "--uc", "--sd", "random", "--ue", "--server_addr", f"{remote_host}:{remote_port}", "--disable_log_color"]
+            command = [
+                binary_path, "http", "-n", "random", "-l", "7860", "-i", "127.0.0.1", "--uc", "--sd", "random",
+                "--ue", "--server_addr", f"{remote_host}:{remote_port}", "--disable_log_color"
+            ]
             proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             atexit.register(kill_tunnel, proc)
             url = ""
@@ -50,11 +63,6 @@ def gradio_tunnel():
     else:
         raise RuntimeError("Tidak dapat mendapatkan tautan berbagi dari Gradio API Server.")
 
-LOCALHOST_RUN = "localhost.run"
-REMOTE_MOE = "remote.moe"
-localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
-remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
-
 
 def gen_key(path: Union[str, Path]) -> None:
     path = Path(path)
@@ -72,13 +80,15 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
     if not ssh_path.exists():
         try:
             gen_key(ssh_path)
-        # write permission error or etc
         except subprocess.CalledProcessError:
             tmp = TemporaryDirectory()
             ssh_path = Path(tmp.name) / ssh_name
             gen_key(ssh_path)
 
     port = cmd_opts.port if cmd_opts.port else 7860
+
+    if host == LOCALHOST_RUN1:
+        port += 1
 
     arg_string = f"ssh -R 80:127.0.0.1:{port} -o StrictHostKeyChecking=no -i {ssh_path.as_posix()} {host}"
     args = shlex.split(arg_string)
@@ -91,7 +101,7 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
 
     tunnel_url = ""
     lines = 27 if host == LOCALHOST_RUN else 5
-    pattern = localhostrun_pattern if host == LOCALHOST_RUN else remotemoe_pattern
+    pattern = localhostrun_pattern if host == LOCALHOST_RUN else localhostrun_pattern1 if host == LOCALHOST_RUN1 else remotemoe_pattern
 
     for _ in range(lines):
         line = tunnel.stdout.readline()
@@ -103,6 +113,8 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
             tunnel_url = url_match.group("url")
             if lines == 27:
                 os.environ['LOCALHOST_RUN'] = tunnel_url
+            elif lines == 5:
+                os.environ['LOCALHOST_RUN1'] = tunnel_url
             else:
                 os.environ['REMOTE_MOE'] = tunnel_url
             break
@@ -112,17 +124,19 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
     if not cmd_opts.multiple:
         strings.en["SHARE_LINK_MESSAGE"] = f"URL WebUI Publik Colab: [{tunnel_url}](https://{tunnel_url})"
 
+
 def googleusercontent_tunnel():
     colab_url = os.getenv('colab_url')
     strings.en["SHARE_LINK_MESSAGE"] = f"URL WebUI Colab: [{colab_url}](https://{colab_url})"
 
+
 if cmd_opts.localhostrun:
     print("localhost.run terdeteksi, mencoba menghubungkan...")
     ssh_tunnel(LOCALHOST_RUN)
-    
-if cmd_opts.localhostrun:
+
+if cmd_opts.localhostrun1:
     print("localhost.run terdeteksi, mencoba menghubungkan...")
-    ssh_tunnel(LOCALHOST_RUN1)    
+    ssh_tunnel(LOCALHOST_RUN1)
 
 if cmd_opts.remotemoe:
     print("remote.moe terdeteksi, mencoba menghubungkan...")
@@ -138,12 +152,12 @@ if cmd_opts.multiple:
         ssh_tunnel(LOCALHOST_RUN)
     except:
         pass
-      
+
     try:
         ssh_tunnel(LOCALHOST_RUN1)
     except:
         pass
-      
+
     try:
         ssh_tunnel(REMOTE_MOE)
     except:
@@ -154,7 +168,7 @@ if cmd_opts.multiple:
     except:
         pass
 
-    running_locally_separated = "\nPublic URL: https://{}\nPublic URL: https://{}\nPublic URL: https://{}\nPublic URL: https://{}".format(
+    running_locally_separated = "\nPublic URL: https://{}\nPublic URL: https://{}\nPublic URL: https://{}\nPublic URL: {}".format(
         os.getenv('REMOTE_MOE'),
         os.getenv('GRADIO_TUNNEL'),
         os.getenv('LOCALHOST_RUN'),
@@ -162,4 +176,3 @@ if cmd_opts.multiple:
     )
     strings.en["RUNNING_LOCALLY_SEPARATED"] = running_locally_separated
     strings.en["SHARE_LINK_DISPLAY"] = "Harap jangan gunakan tautan ini, kami mendapatkan ERROR: Exception in ASGI application:  {}"
-        
