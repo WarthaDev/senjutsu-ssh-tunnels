@@ -5,12 +5,10 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Union
-import os
-import requests
-import stat
+from gradio import strings
+import os, requests, stat
 
 from modules.shared import cmd_opts
-from gradio import strings
 
 # Fungsi untuk menghentikan tunnel
 def kill_tunnel(proc):
@@ -54,10 +52,8 @@ def gradio_tunnel():
 
 LOCALHOST_RUN = "localhost.run"
 REMOTE_MOE = "remote.moe"
-WARTHASENSEI = "warthasensei.localtunnel.me"
 localhostrun_pattern = re.compile(r"(?P<url>https?://\S+\.lhr\.life)")
 remotemoe_pattern = re.compile(r"(?P<url>https?://\S+\.remote\.moe)")
-warthasensei_pattern = re.compile(r"(?P<url>https?://\S+\.warthasensei\.localtunnel\.me)")
 
 
 def gen_key(path: Union[str, Path]) -> None:
@@ -114,15 +110,19 @@ def ssh_tunnel(host: str = LOCALHOST_RUN) -> None:
         raise RuntimeError(f"Gagal menjalankan {host}")
 
     if not cmd_opts.multiple:
-        strings.en["SHARE_LINK_MESSAGE"] = f"URL WebUI Publik Colab: {tunnel_url}"
+        strings.en["SHARE_LINK_MESSAGE"] = f"URL WebUI Publik Colab: [{tunnel_url}](https://{tunnel_url})"
 
 def googleusercontent_tunnel():
     colab_url = os.getenv('colab_url')
-    strings.en["SHARE_LINK_MESSAGE"] = f"URL WebUI Colab: {colab_url}"
+    strings.en["SHARE_LINK_MESSAGE"] = f"URL WebUI Colab: [{colab_url}](https://{colab_url})"
 
 if cmd_opts.localhostrun:
     print("localhost.run terdeteksi, mencoba menghubungkan...")
     ssh_tunnel(LOCALHOST_RUN)
+    
+if cmd_opts.localhostrun:
+    print("localhost.run terdeteksi, mencoba menghubungkan...")
+    ssh_tunnel(LOCALHOST_RUN1)    
 
 if cmd_opts.remotemoe:
     print("remote.moe terdeteksi, mencoba menghubungkan...")
@@ -132,17 +132,18 @@ if cmd_opts.googleusercontent:
     print("googleusercontent.com terdeteksi, mencoba menghubungkan...")
     googleusercontent_tunnel()
 
-if cmd_opts.warthasensei:
-    print("warthasensei.localtunnel.me terdeteksi, mencoba menghubungkan...")
-    ssh_tunnel(WARTHASENSEI)
-
 if cmd_opts.multiple:
     print("Semua terdeteksi, mencoba menghubungkan ke remote.moe...")
     try:
         ssh_tunnel(LOCALHOST_RUN)
     except:
         pass
-
+      
+    try:
+        ssh_tunnel(LOCALHOST_RUN1)
+    except:
+        pass
+      
     try:
         ssh_tunnel(REMOTE_MOE)
     except:
@@ -153,12 +154,12 @@ if cmd_opts.multiple:
     except:
         pass
 
-    running_locally_separated = "URL WebUI Publik Colab: {}\nURL WebUI Publik Colab: {}\nURL WebUI Publik Colab: {}\nURL WebUI Publik Colab: {}".format(
+    running_locally_separated = "\nPublic URL: https://{}\nPublic URL: https://{}\nPublic URL: https://{}\nPublic URL: https://{}".format(
         os.getenv('REMOTE_MOE'),
         os.getenv('GRADIO_TUNNEL'),
         os.getenv('LOCALHOST_RUN'),
-        os.getenv('WARTHASENSEI')
+        os.getenv('LOCALHOST_RUN1')
     )
     strings.en["RUNNING_LOCALLY_SEPARATED"] = running_locally_separated
     strings.en["SHARE_LINK_DISPLAY"] = "Harap jangan gunakan tautan ini, kami mendapatkan ERROR: Exception in ASGI application:  {}"
-            
+        
